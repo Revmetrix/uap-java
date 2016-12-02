@@ -39,15 +39,16 @@ public class DeviceParser {
       return null;
     }
 
-    String device = null;
+    Device device = null;
     for (DevicePattern p : patterns) {
       if ((device = p.match(agentString)) != null) {
         break;
       }
     }
-    if (device == null) device = "Other";
+    if (device == null)
+      return new Device("Other", null, null);
 
-    return new Device(device);
+    return device;
   }
 
   public static DeviceParser fromList(List<Map<String,String>> configList) {
@@ -65,47 +66,78 @@ public class DeviceParser {
     }    
     Pattern pattern = "i".equals(configMap.get("regex_flag")) // no ohter flags used (by now) 
     		? Pattern.compile(regex, Pattern.CASE_INSENSITIVE) : Pattern.compile(regex);
-    return new DevicePattern(pattern, configMap.get("device_replacement"));
+    return new DevicePattern(pattern, configMap.get("device_replacement"),
+        configMap.get("brand_replacement"), configMap.get("model_replacement"));
   }
 
   protected static class DevicePattern {
 	private static final Pattern SUBSTITUTIONS_PATTERN = Pattern.compile("\\$\\d");
     private final Pattern pattern;
     private final String deviceReplacement;
+    private final String brandReplacement;
+    private final String modelReplacement;
 
-    public DevicePattern(Pattern pattern, String deviceReplacement) {
+    public DevicePattern(Pattern pattern, String deviceReplacement, String brandReplacement,
+        String modelReplacement) {
       this.pattern = pattern;
       this.deviceReplacement = deviceReplacement;
+      this.brandReplacement = brandReplacement;
+      this.modelReplacement = modelReplacement;
     }
 
-    public String match(String agentString) {
+    public Device match(String agentString) {
       Matcher matcher = pattern.matcher(agentString);
       if (!matcher.find()) {
         return null;
       }
-      String device = null;
+      String device, brand = null, model = null;
       if (deviceReplacement != null) {
-        if (deviceReplacement.contains("$")) {
-          device = deviceReplacement;
-          for (String substitution : getSubstitutions(deviceReplacement)) {    	  
-        	int i = Integer.valueOf(substitution.substring(1));
-            String replacement = matcher.groupCount() >= i && matcher.group(i) != null 
-        			  ? Matcher.quoteReplacement(matcher.group(i)) : "";
-              device = device.replaceFirst("\\" + substitution, replacement);  
-          }
-          device = device.trim();
-    	} else {
-          device = deviceReplacement;
-        } 
-      } else if (matcher.groupCount() >= 1) {
+        device = multiReplace(deviceReplacement, matcher);
+      } else {
         device = matcher.group(1);
       }
 
-      return device;
+      if (brandReplacement != null) {
+        brand = multiReplace(brandReplacement, matcher);
+      }
+
+      if (modelReplacement != null) {
+        model = multiReplace(modelReplacement, matcher);
+      } else if (matcher.groupCount() >= 1) {
+        model = matcher.group(1);
+      }
+
+      if (device == null || device.equals(""))
+        device = "Other";
+
+      if ((brand != null) && brand.equals(""))
+        brand = null;
+
+      if ((model != null) && model.equals(""))
+        model = null;
+
+      return new Device(device, brand, model);
     }
     
-    private List<String> getSubstitutions(String deviceReplacement) {
-      Matcher matcher = SUBSTITUTIONS_PATTERN.matcher(deviceReplacement);
+    private String multiReplace(String typeReplacement, Matcher matcher) {
+      String ret = null;
+      if (typeReplacement.contains("$")) {
+        ret = typeReplacement;
+        for (String substitution : getSubstitutions(typeReplacement)) {
+          int i = Integer.valueOf(substitution.substring(1));
+          String replacement = matcher.groupCount() >= i && matcher.group(i) != null
+              ? Matcher.quoteReplacement(matcher.group(i)) : "";
+          ret = ret.replaceFirst("\\" + substitution, replacement);
+        }
+        ret = ret.trim();
+      } else {
+        ret = typeReplacement;
+      }
+      return ret;
+    }
+
+    private List<String> getSubstitutions(String typeReplacement) {
+      Matcher matcher = SUBSTITUTIONS_PATTERN.matcher(typeReplacement);
       List<String> substitutions = new ArrayList<String>();
       while (matcher.find()) {
         substitutions.add(matcher.group());
